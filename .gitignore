@@ -47,8 +47,9 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# Trained models
-models/
+# Trained models (keep the directory stub, ignore binaries)
+models/*.pkl
+models/*.joblib
 *.pkl
 *.joblib
 

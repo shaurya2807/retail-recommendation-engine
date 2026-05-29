@@ -31,6 +31,10 @@ class ModelRegistryRepository:
                 """
                 INSERT INTO model_registry (model_name, version, metrics, model_path)
                 VALUES (%s, %s, %s::jsonb, %s)
+                ON CONFLICT (model_name, version) DO UPDATE
+                    SET metrics    = EXCLUDED.metrics,
+                        model_path = EXCLUDED.model_path,
+                        is_active  = FALSE
                 RETURNING id, model_name, version, metrics, model_path, created_at, is_active
                 """,
                 (model_name, version, json.dumps(metrics), model_path),
@@ -52,6 +56,20 @@ class ModelRegistryRepository:
             )
             row = cur.fetchone()
         return ModelRecord(**dict(row)) if row else None
+
+    def list_versions(self, model_name: str) -> list[ModelRecord]:
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, model_name, version, metrics, model_path, created_at, is_active
+                FROM model_registry
+                WHERE model_name = %s
+                ORDER BY created_at DESC
+                """,
+                (model_name,),
+            )
+            rows = cur.fetchall()
+        return [ModelRecord(**dict(row)) for row in rows]
 
     def set_active(self, model_id: int) -> None:
         with db_cursor() as cur:
