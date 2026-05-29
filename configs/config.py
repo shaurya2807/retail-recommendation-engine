@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     db_password: str = "postgres"
     db_name: str = "recommendations"
     db_sslmode: str = "disable"
+    collab_weight: float = 0.6
+    content_weight: float = 0.4
 
     @property
     def db_dsn(self) -> str:

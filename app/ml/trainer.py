@@ -77,6 +77,20 @@ class CollaborativeFilteringTrainer:
 
         return result
 
+    def raw_scores(self, user_id: int) -> dict[int, float]:
+        """Return raw predicted score for every product in the model.
+
+        Used by HybridRecommender before normalisation and blending.
+        """
+        if self._user_factors is None:
+            raise RuntimeError("Not fitted. Call fit() first.")
+        user_idx = self._user_index.get(user_id)
+        if user_idx is None:
+            return {}
+        user_vec = self._user_factors[user_idx]
+        scores   = self._item_factors @ user_vec
+        return {self._item_ids[i]: float(scores[i]) for i in range(len(self._item_ids))}
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
