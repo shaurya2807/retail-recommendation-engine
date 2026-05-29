@@ -1,157 +1,70 @@
-# Retail Recommendation Engine
+# retail-recommendation-engine
 
-A production-style recommendation API for a home-improvement retailer. Combines collaborative filtering (TruncatedSVD) with content-based filtering (TF-IDF) in a weighted hybrid model, served over FastAPI with PostgreSQL persistence.
+A REST API that recommends home-improvement products to shoppers. It combines a collaborative filter (what similar shoppers bought) with a content-based filter (what is textually similar to products the shopper has already seen), blends the two scores, and returns a ranked list. Models are trained offline, serialised to disk, and loaded into memory at server start. All model versions and their evaluation metrics are recorded in Postgres so you can track accuracy over time and roll back to an earlier version.
 
 ## Architecture
 
 ```
-┌─────────────┐    ┌──────────────────────────────────────────┐    ┌──────────────┐
-│   FastAPI   │───▶│  HybridRecommender (0.6 CF + 0.4 CB)    │───▶│  PostgreSQL  │
-│  app.main   │    │  ├─ CollaborativeFilteringTrainer (SVD)  │    │  products    │
-│             │    │  └─ ContentBasedRecommender (TF-IDF)     │    │  users       │
-│  /api/v1/   │    └──────────────────────────────────────────┘    │  interactions│
-│  /health    │                                                     │  model_regist│
-└─────────────┘                                                     └──────────────┘
+PostgreSQL
+    │
+    ├─ products / users / interactions
+    │       │
+    │  Repository layer (psycopg2)
+    │       │
+    │  ML Pipeline
+    │  ├─ CollaborativeFilteringTrainer  (TruncatedSVD)
+    │  ├─ ContentBasedRecommender        (TF-IDF cosine)
+    │  ├─ HybridRecommender              (weighted blend)
+    │  └─ ModelRegistry                  (joblib + model_registry table)
+    │       │
+    └─ FastAPI
+            │
+          Client
 ```
 
-## Prerequisites
+## Stack
 
-- Docker and Docker Compose, **or** Python 3.11+ and PostgreSQL 15
+| Layer      | Technology                        |
+|------------|-----------------------------------|
+| Language   | Python 3.11                       |
+| Framework  | FastAPI + Uvicorn                 |
+| ML         | scikit-learn (SVD, TF-IDF)        |
+| Database   | PostgreSQL 15                     |
+| Infra      | Docker Compose, joblib            |
 
-## Quickstart (Docker)
+## How to run locally
 
 ```bash
-cp .env.example .env          # or edit .env directly
+# 1. Start the database and application (seeds + trains on first boot)
 docker compose up --build
-```
 
-On first boot the app container seeds the database (50 products, 20 users, ~570 interactions), trains all three models, and starts the API on port 8080.
-
-Models are stored in a named Docker volume (`models_data`) so they survive container restarts without retraining.
-
-## Local development
-
-```bash
-# 1. Start only the database
-docker compose up -d db
-
-# 2. Create and activate a virtualenv
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Seed and train
+# 2. If running outside Docker, seed the database
 python scripts/seed.py
+
+# 3. Train and register all three models
 python scripts/train.py
-
-# 5. Start the API
-uvicorn app.main:app --reload --port 8080
 ```
 
-## Environment variables
+The app is available at `http://localhost:8080`. Interactive docs at `/docs`.
 
-| Variable | Default | Description |
-|---|---|---|
-| `DB_HOST` | `localhost` | Postgres host |
-| `DB_PORT` | `5432` | Postgres port |
-| `DB_USER` | `postgres` | Postgres user |
-| `DB_PASSWORD` | `postgres` | Postgres password |
-| `DB_NAME` | `recommendations` | Database name |
-| `COLLAB_WEIGHT` | `0.6` | Collaborative filter blend weight |
-| `CONTENT_WEIGHT` | `0.4` | Content-based filter blend weight |
+## API endpoints
 
-## API reference
+| Method | Path                                         | Description                                  |
+|--------|----------------------------------------------|----------------------------------------------|
+| GET    | `/api/v1/recommendations/{user_id}`          | Personalised top-N hybrid recommendations    |
+| GET    | `/api/v1/recommendations/similar/{product_id}` | Top-N TF-IDF similar products              |
+| GET    | `/api/v1/products/`                          | Paginated product list                       |
+| GET    | `/api/v1/products/{product_id}`              | Single product by ID                         |
+| GET    | `/api/v1/products/category/{category}`       | Products filtered by category                |
+| GET    | `/api/v1/models/`                            | All registered model versions with metrics   |
+| GET    | `/health`                                    | Liveness check; reports loaded model status  |
 
-All routes are under `/api/v1`.
+Query parameter `top_n` (default `10`, max `100`) applies to both recommendation routes.
 
-### Recommendations
+## How the hybrid model works
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/recommendations/{user_id}` | Top-N hybrid recommendations for a user |
-| `GET` | `/recommendations/similar/{product_id}` | Top-N TF-IDF similar products |
+Each request scores every product using both models independently: the collaborative filter predicts a user's affinity based on the SVD decomposition of the user–product interaction matrix, while the content-based filter scores products by the cosine similarity of their TF-IDF text vectors to the user's interaction history. Both score vectors are min-max normalised to `[0, 1]` so they are on the same scale, then combined as `0.6 × collab + 0.4 × content`. Products the user has already interacted with are excluded, and the top-N by combined score are returned.
 
-Query parameter `top_n` (default 10, max 100) controls list length.
+## Model registry
 
-**Example — user recommendations:**
-```bash
-curl http://localhost:8080/api/v1/recommendations/1
-```
-```json
-{
-  "user_id": 1,
-  "recommendations": [
-    {"rank": 1, "product_id": 18, "sku": "LBR-00008", "name": "1/2-in 4x8 Drywall",
-     "category": "Lumber", "price": "13.48", "score": 0.3178}
-  ],
-  "model_name": "hybrid",
-  "model_version": "1.0"
-}
-```
-
-**Example — similar products:**
-```bash
-curl http://localhost:8080/api/v1/recommendations/similar/1
-```
-
-### Products
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/products/` | Paginated product list (`limit`, `offset`) |
-| `GET` | `/products/{product_id}` | Single product by ID |
-| `GET` | `/products/category/{category}` | Products filtered by category |
-
-### Model registry
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/models/` | All registered model versions with metrics |
-
-```bash
-curl http://localhost:8080/api/v1/models/
-```
-```json
-{
-  "models": [
-    {"model_name": "hybrid", "version": "1.0", "metrics": {},
-     "is_active": true, "created_at": "2026-05-29T19:47:00"}
-  ]
-}
-```
-
-### System
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Liveness check; reports loaded model status |
-
-## ML pipeline
-
-```
-scripts/train.py
-  1. Load interaction matrix from DB (users × products)
-  2. Fit CollaborativeFilteringTrainer (TruncatedSVD, n_components=20)
-  3. Leave-one-out evaluation → precision/recall/nDCG @10
-  4. Fit ContentBasedRecommender (TF-IDF max_features=500)
-  5. Build HybridRecommender (collab + content)
-  6. Register all three models in model_registry table (joblib on disk)
-```
-
-Re-running `train.py` upserts existing model versions and promotes them to active.
-
-## Project layout
-
-```
-app/
-  api/          # FastAPI routers (products, recommendations, models, users)
-  ml/           # trainer, evaluator, content_based, hybrid, registry
-  models/       # Pydantic schemas
-  repository/   # psycopg2 data access (product, user, interaction, model_registry)
-configs/        # pydantic-settings config
-migrations/     # 001_init.sql — schema DDL
-models/         # joblib model files (git-ignored except .gitkeep)
-scripts/        # seed.py, train.py
-```
+Every time `scripts/train.py` runs it upserts a row into the `model_registry` table for each of the three models (`collaborative_filter`, `content_based`, `hybrid`) recording the version string, evaluation metrics (precision/recall/nDCG at k=10 for the collaborative filter), the path to the serialised file on disk, and a timestamp. Only one version per model name is marked `is_active=true` at a time; the lifespan hook in `app/main.py` loads the active versions into `app.state` on startup. To roll back, set `is_active=true` on an earlier row and restart the server.
