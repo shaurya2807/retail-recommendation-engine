@@ -1,10 +1,27 @@
+from decimal import Decimal
+
 from pydantic import BaseModel
 
-from app.models.product import Product
+
+class RecommendedItem(BaseModel):
+    rank: int
+    product_id: int
+    sku: str
+    name: str
+    category: str
+    price: Decimal
+    score: float
 
 
-class RecommendationResult(BaseModel):
+class RecommendationResponse(BaseModel):
     user_id: int
-    products: list[Product]
+    recommendations: list[RecommendedItem]
     model_version: str
-    score_map: dict[int, float] = {}
+    model_name: str
+
+
+class SimilarProductsResponse(BaseModel):
+    product_id: int
+    similar: list[RecommendedItem]
+    model_name: str
+    model_version: str

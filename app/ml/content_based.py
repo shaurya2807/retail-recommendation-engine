@@ -49,8 +49,8 @@ class ContentBasedRecommender:
     # Prediction
     # ------------------------------------------------------------------
 
-    def predict(self, product_id: int, top_n: int = 10) -> list[int]:
-        """Return top_n product IDs most similar to product_id (excluding itself)."""
+    def _rank_similar(self, product_id: int, top_n: int) -> list[tuple[int, float]]:
+        """Return (product_id, cosine_sim) pairs for the top_n most similar products."""
         if self._tfidf_matrix is None:
             raise RuntimeError("Not fitted. Call fit() first.")
 
@@ -59,14 +59,24 @@ class ContentBasedRecommender:
             return []
 
         sims = cosine_similarity(self._tfidf_matrix[idx], self._tfidf_matrix).flatten()
-        sims[idx] = -np.inf  # exclude query product
+        sims[idx] = -np.inf
 
         top_indices = np.argsort(sims)[::-1]
         return [
-            self._product_ids[i]
+            (self._product_ids[i], float(sims[i]))
             for i in top_indices
             if not np.isneginf(sims[i])
         ][:top_n]
+
+    def predict(self, product_id: int, top_n: int = 10) -> list[int]:
+        """Return top_n product IDs most similar to product_id (excluding itself)."""
+        return [pid for pid, _ in self._rank_similar(product_id, top_n)]
+
+    def predict_with_scores(
+        self, product_id: int, top_n: int = 10
+    ) -> list[tuple[int, float]]:
+        """Return (product_id, score) pairs for the top_n most similar products."""
+        return self._rank_similar(product_id, top_n)
 
     def predict_for_user(
         self,

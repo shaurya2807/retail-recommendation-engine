@@ -39,18 +39,13 @@ class HybridRecommender:
     # Prediction
     # ------------------------------------------------------------------
 
-    def predict(
+    def _rank_all(
         self,
         user_id: int,
         user_interacted_product_ids: list[int],
-        top_n: int = 10,
-    ) -> list[int]:
-        """Return top_n product IDs by weighted hybrid score.
-
-        Each model's scores are min-max normalised to [0, 1] before blending:
-            hybrid = α_collab · collab_score + α_content · content_score
-        Already-interacted products are excluded from the output.
-        """
+        top_n: int,
+    ) -> list[tuple[int, float]]:
+        """Return (product_id, hybrid_score) pairs, excluding seen products."""
         collab_map  = self._collab.raw_scores(user_id)
         content_map = self._content.score_all_for_user(user_interacted_product_ids)
 
@@ -76,7 +71,25 @@ class HybridRecommender:
             key=lambda x: x[1],
             reverse=True,
         )
-        return [pid for pid, _ in ranked[:top_n]]
+        return ranked[:top_n]
+
+    def predict(
+        self,
+        user_id: int,
+        user_interacted_product_ids: list[int],
+        top_n: int = 10,
+    ) -> list[int]:
+        """Return top_n product IDs by weighted hybrid score."""
+        return [pid for pid, _ in self._rank_all(user_id, user_interacted_product_ids, top_n)]
+
+    def predict_with_scores(
+        self,
+        user_id: int,
+        user_interacted_product_ids: list[int],
+        top_n: int = 10,
+    ) -> list[tuple[int, float]]:
+        """Return (product_id, score) pairs for the top_n hybrid recommendations."""
+        return self._rank_all(user_id, user_interacted_product_ids, top_n)
 
     # ------------------------------------------------------------------
     # Serialisation
