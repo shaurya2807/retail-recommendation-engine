@@ -2,6 +2,8 @@ from app.models.product import Product, ProductBase, ProductCreate
 from app.models.user import User, UserBase, UserCreate
 from app.models.interaction import Interaction, InteractionCreate, InteractionType
 from app.models.recommendation import (
+    ModelVersionInfo,
+    ModelsListResponse,
     RecommendedItem,
     RecommendationResponse,
     SimilarProductsResponse,
@@ -12,4 +14,5 @@ __all__ = [
     "User", "UserBase", "UserCreate",
     "Interaction", "InteractionCreate", "InteractionType",
     "RecommendedItem", "RecommendationResponse", "SimilarProductsResponse",
+    "ModelVersionInfo", "ModelsListResponse",
 ]

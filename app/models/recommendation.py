@@ -1,6 +1,21 @@
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
+
+
+class ModelVersionInfo(BaseModel):
+    model_config = {"from_attributes": True}
+
+    model_name: str
+    version: str
+    metrics: dict
+    is_active: bool
+    created_at: datetime
+
+
+class ModelsListResponse(BaseModel):
+    models: list[ModelVersionInfo]
 
 
 class RecommendedItem(BaseModel):

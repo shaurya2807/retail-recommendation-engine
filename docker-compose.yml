@@ -29,6 +29,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - models_data:/app/models
 
 volumes:
   postgres_data:
+  models_data:

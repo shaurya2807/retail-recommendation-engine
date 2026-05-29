@@ -12,4 +12,5 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# seed + train run at container start (not build time) so the DB is reachable.
+CMD ["sh", "-c", "python scripts/seed.py && python scripts/train.py && uvicorn app.main:app --host 0.0.0.0 --port 8080"]
